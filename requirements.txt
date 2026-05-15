@@ -2,7 +2,7 @@ streamlit
 yfinance
 pandas
 plotly
-pandas-ta
+ta
 transformers
 torch
 openpyxl
