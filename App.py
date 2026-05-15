@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
-import pandas_ta as ta
+import ta as ta_lib
 from transformers import pipeline
 from io import BytesIO
 
@@ -51,17 +51,24 @@ def get_technical_analysis(df: pd.DataFrame):
 
     df["SMA20"] = df["Close"].rolling(20).mean()
     df["SMA50"] = df["Close"].rolling(50).mean()
-    df["RSI"]   = ta.rsi(df["Close"], length=14)
 
-    bb   = ta.bbands(df["Close"], length=20)
-    macd = ta.macd(df["Close"])
-    df   = pd.concat([df, bb, macd], axis=1)
+    # RSI
+    df["RSI"] = ta_lib.momentum.RSIIndicator(df["Close"], window=14).rsi()
+
+    # Bollinger Bands
+    bb = ta_lib.volatility.BollingerBands(df["Close"], window=20)
+    df["BBL_20_2.0"] = bb.bollinger_lband()
+    df["BBU_20_2.0"] = bb.bollinger_hband()
+
+    # MACD
+    macd = ta_lib.trend.MACD(df["Close"])
+    df["MACD_12_26_9"]  = macd.macd()
+    df["MACDs_12_26_9"] = macd.macd_signal()
 
     latest = df.iloc[-1]
     prev   = df.iloc[-2]
     signals, score = [], 0
 
-    # Trend
     if latest["SMA20"] > latest["SMA50"]:
         signals.append("🟢 SMA Bullish (SMA20 > SMA50)")
         score += 2
@@ -69,7 +76,6 @@ def get_technical_analysis(df: pd.DataFrame):
         signals.append("🔴 SMA Bearish (SMA20 < SMA50)")
         score -= 2
 
-    # RSI
     rsi = latest["RSI"]
     if rsi < 30:
         signals.append(f"🟢 RSI Oversold ({rsi:.1f})")
@@ -80,38 +86,25 @@ def get_technical_analysis(df: pd.DataFrame):
     else:
         signals.append(f"⚪ RSI Neutral ({rsi:.1f})")
 
-    # MACD crossover
-    macd_col = "MACD_12_26_9"
-    sig_col  = "MACDs_12_26_9"
-    if macd_col in df.columns and sig_col in df.columns:
-        if latest[macd_col] > latest[sig_col] and prev[macd_col] <= prev[sig_col]:
-            signals.append("🟢 MACD Bull Crossover")
-            score += 3
-        elif latest[macd_col] < latest[sig_col] and prev[macd_col] >= prev[sig_col]:
-            signals.append("🔴 MACD Bear Crossover")
-            score -= 3
+    if latest["MACD_12_26_9"] > latest["MACDs_12_26_9"] and prev["MACD_12_26_9"] <= prev["MACDs_12_26_9"]:
+        signals.append("🟢 MACD Bull Crossover")
+        score += 3
+    elif latest["MACD_12_26_9"] < latest["MACDs_12_26_9"] and prev["MACD_12_26_9"] >= prev["MACDs_12_26_9"]:
+        signals.append("🔴 MACD Bear Crossover")
+        score -= 3
 
-    # Bollinger Bands
-    bbl = "BBL_20_2.0"
-    bbu = "BBU_20_2.0"
-    if bbl in df.columns and bbu in df.columns:
-        if latest["Close"] < latest[bbl]:
-            signals.append("🟢 Below Lower Bollinger Band")
-            score += 2
-        elif latest["Close"] > latest[bbu]:
-            signals.append("🔴 Above Upper Bollinger Band")
-            score -= 1
+    if latest["Close"] < latest["BBL_20_2.0"]:
+        signals.append("🟢 Below Lower Bollinger Band")
+        score += 2
+    elif latest["Close"] > latest["BBU_20_2.0"]:
+        signals.append("🔴 Above Upper Bollinger Band")
+        score -= 1
 
-    if score >= 5:
-        overall = "🟢 STRONG BULLISH"
-    elif score >= 2:
-        overall = "🟡 BULLISH"
-    elif score <= -5:
-        overall = "🔴 STRONG BEARISH"
-    elif score <= -2:
-        overall = "🟠 BEARISH"
-    else:
-        overall = "⚪ NEUTRAL"
+    if score >= 5:      overall = "🟢 STRONG BULLISH"
+    elif score >= 2:    overall = "🟡 BULLISH"
+    elif score <= -5:   overall = "🔴 STRONG BEARISH"
+    elif score <= -2:   overall = "🟠 BEARISH"
+    else:               overall = "⚪ NEUTRAL"
 
     return overall, signals, latest, df
 
